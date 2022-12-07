@@ -3,7 +3,9 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigKey, configs, TypeormConfig } from './config';
+import { MessageService } from './message';
 import { RedisService } from './redis';
+import { SocketService } from './socket';
 
 @Global()
 @Module({
@@ -20,7 +22,7 @@ import { RedisService } from './redis';
       },
     }),
   ],
-  providers: [RedisService],
-  exports: [RedisService],
+  providers: [RedisService, SocketService, MessageService],
+  exports: [RedisService, SocketService, MessageService],
 })
 export class CommonModule {}
