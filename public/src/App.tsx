@@ -12,17 +12,17 @@ const App = () => {
       socket.connect();
     }
 
-    socket.on('welcome', (data) => console.log(data));
+    socket.on('hi::to-user', (data) => console.log(data));
 
     return () => {
-      socket.off('welcome');
+      socket.off('hi::to-user');
     };
   }, []);
 
   return (
     <div>
       <h1>APP</h1>
-      <button onClick={() => socket.emit('hi')}>Hi!</button>
+      <button onClick={() => socket.emit('user::say-hi')}>Hi!</button>
     </div>
   );
 };
