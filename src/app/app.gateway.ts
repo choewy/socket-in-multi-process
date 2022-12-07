@@ -1,5 +1,7 @@
+import { RedisService } from '@/common/redis';
+import { OnApplicationBootstrap } from '@nestjs/common';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import {
-  ConnectedSocket,
   OnGatewayConnection,
   OnGatewayDisconnect,
   OnGatewayInit,
@@ -8,12 +10,72 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import {
+  AppEmitterPubEvent,
+  AppEmitterSubEvent,
+  RedisPubEvent,
+  RedisSubEvent,
+  SocketEmitEvent,
+  SocketSubEvent,
+} from './enums';
+import { RedisMessageBody, RedisPubSubMessage } from './types';
 
 @WebSocketGateway()
 export class AppGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+  implements
+    OnApplicationBootstrap,
+    OnGatewayInit,
+    OnGatewayConnection,
+    OnGatewayDisconnect
 {
   @WebSocketServer() private server: Server;
+  private readonly CHANNEL = 'ch01';
+
+  constructor(
+    private readonly eventEmitter: EventEmitter2,
+    private readonly redisService: RedisService,
+  ) {}
+
+  async onApplicationBootstrap() {
+    await this.redisService.connect();
+    await this.redisService.subscriber.subscribe(this.CHANNEL);
+    this.redisService.subscriber.on(
+      'message',
+      async (channel: string, message: string) => {
+        if (channel === this.CHANNEL) {
+          const { subject, body } = this.parseToJSON(message);
+          let event: string;
+
+          switch (subject) {
+            case RedisSubEvent.Welcome:
+              event = AppEmitterPubEvent.Hello;
+              break;
+          }
+
+          await this.eventEmitter.emitAsync(event, body);
+        }
+      },
+    );
+  }
+
+  jsonToString(obj: RedisPubSubMessage): string {
+    try {
+      return JSON.stringify(obj);
+    } catch (e) {
+      return '';
+    }
+  }
+
+  parseToJSON(str: string): RedisPubSubMessage {
+    try {
+      return JSON.parse(str);
+    } catch (e) {
+      return {
+        subject: '',
+        body: {},
+      };
+    }
+  }
 
   afterInit(server: Server) {
     this.server = server;
@@ -21,7 +83,7 @@ export class AppGateway
   }
 
   handleConnection(client: Socket) {
-    client.handshake.auth = {
+    client.data = {
       userId: 1,
     };
 
@@ -38,10 +100,10 @@ export class AppGateway
     }`);
   }
 
-  private findSocketByUserId(userId: number): Socket {
+  private getSocket(userId: number): Socket {
     return Array.from(this.server.sockets.sockets).reduce<Socket | null>(
       (pick, [, socket]) => {
-        if (socket.handshake.auth.userId === userId) {
+        if (socket.data.userId === userId) {
           pick = socket;
         }
 
@@ -51,20 +113,26 @@ export class AppGateway
     );
   }
 
-  @SubscribeMessage('hi')
-  async welcome(@ConnectedSocket() client: Socket): Promise<void> {
-    const socket = this.findSocketByUserId(1);
-
-    console.log(
-      `{ pid : ${process.pid} } 
-      - hi : { 
-        client : ${client.id}, 
-        socket : ${socket.id} 
-      }`,
+  @SubscribeMessage(SocketSubEvent.Hi)
+  async hi(): Promise<void> {
+    this.redisService.publisher.publish(
+      this.CHANNEL,
+      this.jsonToString({
+        subject: RedisPubEvent.Welcome,
+        body: {
+          userId: 1,
+          hi: 'welcome, bro',
+        },
+      }),
     );
+  }
 
-    socket.emit('welcome', {
-      hi: 'welcome, bro',
-    });
+  @OnEvent(AppEmitterSubEvent.Hello)
+  async hello(body: RedisMessageBody) {
+    const socket = this.getSocket(body.userId);
+
+    if (socket) {
+      socket.emit(SocketEmitEvent.Hi, body);
+    }
   }
 }
