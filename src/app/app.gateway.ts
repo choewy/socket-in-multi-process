@@ -1,7 +1,7 @@
 import { MessageService } from '@/common/message';
 import { RedisService } from '@/common/redis';
 import { SocketService } from '@/common/socket';
-import { OnApplicationBootstrap } from '@nestjs/common';
+import { Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import {
   OnGatewayConnection,
@@ -26,6 +26,8 @@ export class AppGateway
   implements OnApplicationBootstrap, OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer() private server: Server;
+  private readonly logger = new Logger(AppGateway.name);
+
   private readonly CHANNEL = 'ch01';
 
   constructor(
@@ -64,14 +66,14 @@ export class AppGateway
       userId: 1,
     };
 
-    console.log(`{ pid : ${process.pid} } 
+    this.logger.verbose(`{ pid : ${process.pid} } 
     - connected : {
       client : ${client.id}
     }`);
   }
 
   handleDisconnect(client: Socket) {
-    console.log(`{ pid : ${process.pid} } 
+    this.logger.verbose(`{ pid : ${process.pid} } 
     - disconnected : {
       client : ${client.id}
     }`);
