@@ -1,10 +1,11 @@
+import { MessageService } from '@/common/message';
 import { RedisService } from '@/common/redis';
+import { SocketService } from '@/common/socket';
 import { OnApplicationBootstrap } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import {
   OnGatewayConnection,
   OnGatewayDisconnect,
-  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
@@ -22,11 +23,7 @@ import { RedisMessageBody, RedisPubSubMessage } from './types';
 
 @WebSocketGateway()
 export class AppGateway
-  implements
-    OnApplicationBootstrap,
-    OnGatewayInit,
-    OnGatewayConnection,
-    OnGatewayDisconnect
+  implements OnApplicationBootstrap, OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer() private server: Server;
   private readonly CHANNEL = 'ch01';
@@ -34,6 +31,8 @@ export class AppGateway
   constructor(
     private readonly eventEmitter: EventEmitter2,
     private readonly redisService: RedisService,
+    private readonly socketService: SocketService,
+    private readonly messageService: MessageService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -43,7 +42,9 @@ export class AppGateway
       'message',
       async (channel: string, message: string) => {
         if (channel === this.CHANNEL) {
-          const { subject, body } = this.parseToJSON(message);
+          const { subject, body } =
+            this.messageService.parse<RedisMessageBody>(message);
+
           let event: string;
 
           switch (subject) {
@@ -56,30 +57,6 @@ export class AppGateway
         }
       },
     );
-  }
-
-  jsonToString(obj: RedisPubSubMessage): string {
-    try {
-      return JSON.stringify(obj);
-    } catch (e) {
-      return '';
-    }
-  }
-
-  parseToJSON(str: string): RedisPubSubMessage {
-    try {
-      return JSON.parse(str);
-    } catch (e) {
-      return {
-        subject: '',
-        body: {},
-      };
-    }
-  }
-
-  afterInit(server: Server) {
-    this.server = server;
-    return server;
   }
 
   handleConnection(client: Socket) {
@@ -100,24 +77,11 @@ export class AppGateway
     }`);
   }
 
-  private getSocket(userId: number): Socket {
-    return Array.from(this.server.sockets.sockets).reduce<Socket | null>(
-      (pick, [, socket]) => {
-        if (socket.data.userId === userId) {
-          pick = socket;
-        }
-
-        return pick;
-      },
-      null,
-    );
-  }
-
   @SubscribeMessage(SocketSubEvent.Hi)
   async hi(): Promise<void> {
     this.redisService.publisher.publish(
       this.CHANNEL,
-      this.jsonToString({
+      this.messageService.toString<RedisPubSubMessage>({
         subject: RedisPubEvent.Welcome,
         body: {
           userId: 1,
@@ -128,11 +92,12 @@ export class AppGateway
   }
 
   @OnEvent(AppEmitterSubEvent.Hello)
-  async hello(body: RedisMessageBody) {
-    const socket = this.getSocket(body.userId);
-
-    if (socket) {
-      socket.emit(SocketEmitEvent.Hi, body);
-    }
+  async hello({ userId, ...body }: RedisMessageBody) {
+    return this.socketService.emitAll(
+      this.server,
+      userId,
+      SocketEmitEvent.Hi,
+      body,
+    );
   }
 }

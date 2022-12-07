@@ -1,8 +1,8 @@
-export type RedisMessageBody<T extends object | any = any> = T & {
+export type RedisMessageBody<T = any> = T & {
   userId: number;
 };
 
-export type RedisPubSubMessage<T extends object | any = any> = {
+export type RedisPubSubMessage<T = any> = {
   subject: string;
   body: RedisMessageBody<T>;
 };
