@@ -26,8 +26,8 @@ export class AppGateway
   implements OnApplicationBootstrap, OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer() private server: Server;
-  private readonly logger = new Logger(AppGateway.name);
 
+  private readonly logger = new Logger(AppGateway.name);
   private readonly CHANNEL = 'ch01';
 
   constructor(
@@ -80,7 +80,16 @@ export class AppGateway
   }
 
   @SubscribeMessage(SocketSubEvent.Hi)
-  async hi(): Promise<void> {
+  async hiWithFetch(): Promise<void> {
+    const sockets = await this.server.fetchSockets();
+
+    for (const socket of sockets) {
+      socket.emit(SocketEmitEvent.Hi, { userId: 1, hi: 'welcome, bro' });
+    }
+  }
+
+  @SubscribeMessage(SocketSubEvent.Hi)
+  async hiWithPublish(): Promise<void> {
     this.redisService.publisher.publish(
       this.CHANNEL,
       this.messageService.toString<RedisPubSubMessage>({
